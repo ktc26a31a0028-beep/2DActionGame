@@ -42,6 +42,9 @@ public class Player : MonoBehaviour
     [Header("サウンド -- 死亡 SE")]
     [SerializeField] AudioClip deathClip;
 
+    // 死亡したかを外から読めるようにする（GameManager・Goal で使う）
+    public bool IsDead => isDead;
+
     // これ未満の入力は無視（スティックのわずかな傾き対策）
     float minInputToMove = 0.2f;
     Rigidbody2D rigidBody2D;       // 物理特性（速度・重力など）を扱う変数
@@ -57,6 +60,8 @@ public class Player : MonoBehaviour
     bool wasGrounded;              // 前のフレームで地面に足がついていたか（着地 SE 用）
     AudioSource audioSource;         // 効果音用のサウンド
     bool wasMoving;                // 前のフレームで動いていたか（移動開始 SE 用）
+    Animator animator;             // アニメーションを切り替える部品
+    string currentAnim = "Idle";   // 今のアニメーション名（同じ Trigger を何度も送らないため）
 
     /// <summary>
     /// オブジェクトが読み込まれたとき、呼ばれる
@@ -71,6 +76,9 @@ public class Player : MonoBehaviour
 
         // 効果音を鳴らす部品を取得して保持
         audioSource = GetComponent<AudioSource>();
+
+        // アニメーションを切り替える部品を取得して保持
+        animator = GetComponent<Animator>();
 
         // InputSystemを探して保持
         moveAction = InputSystem.actions.FindAction("Player/Move");
@@ -157,6 +165,18 @@ public class Player : MonoBehaviour
 
         // ジャンプボタンが押されたら跳ぶ
         TryJump();
+    }
+
+    /// <summary>
+    /// 全ての Update が終わった後に、毎フレーム呼ばれる
+    /// </summary>
+    void LateUpdate()
+    {
+        // 今の状態に合わせてアニメーションを切り替える
+        UpdateAnimation();
+
+        // 死亡アニメーションが終わったら非表示にする
+        HideAfterDeath();
     }
 
     /// <summary>
@@ -368,6 +388,64 @@ public class Player : MonoBehaviour
         if (!wasGrounded && isGrounded)
         {
             PlayOneShot(landClip);
+        }
+    }
+
+    /// <summary>
+    /// 状態からアニメーション名を決めて、変わったときだけ Trigger を送る
+    /// </summary>
+    void UpdateAnimation()
+    {
+        // 優先度の高い順に、次のアニメーションを決める
+        string nextAnim;
+        if (isDead)
+        {
+            nextAnim = "Death";
+        }
+        else if (hitStunTimer > 0f)
+        {
+            nextAnim = "Damage";
+        }
+        else if (!isGrounded)
+        {
+            nextAnim = "Jump";
+        }
+        else if (moveInputX != 0f)
+        {
+            nextAnim = "Move";
+        }
+        else
+        {
+            nextAnim = "Idle";
+        }
+        // 今と同じなら何もしない（毎フレーム送ると最初のコマに戻り続ける）
+        if (nextAnim == currentAnim)
+        {
+            return;
+        }
+        // Trigger を送って切り替え、今のアニメーション名を覚える
+        animator.SetTrigger(nextAnim);
+        currentAnim = nextAnim;
+    }
+
+    /// <summary>
+    /// 死亡アニメーションを最後まで再生したら、見た目を消す
+    /// </summary>
+    void HideAfterDeath()
+    {
+        // 死んでいない、またはもう消えているなら何もしない
+        if (!isDead || !spriteRenderer.enabled)
+        {
+            return;
+        }
+
+        // 今再生中のアニメーションの情報を取得（0 は Base Layer）
+        AnimatorStateInfo state = animator.GetCurrentAnimatorStateInfo(0);
+
+        // normalizedTime は再生の進み具合（0 = 開始、1 = 最後まで再生）
+        if (state.IsName("Death") && state.normalizedTime >= 1f)
+        {
+            spriteRenderer.enabled = false;
         }
     }
 }
